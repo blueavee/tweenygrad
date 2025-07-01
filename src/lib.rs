@@ -1,3 +1,6 @@
+#![allow(unused)]
+use std::collections::HashMap;
+
 #[derive(Clone, Debug)]
 pub enum DType {
     Float32,
@@ -10,6 +13,7 @@ pub enum DTypeVal {
     Float32(f32),
     Int32(i32),
     Bool(bool),
+    Str(String),
 }
 
 #[derive(Clone, Debug)]
@@ -24,7 +28,29 @@ enum Ops {
     STORE,
     ADD,
     CONST,
+    DefineVar,
 }
+
+#[derive(Debug)]
+pub struct Metadata {
+    name: String,
+    caller: String,
+    backward: bool,
+}
+
+#[derive(Debug)]
+pub struct Buffer {
+    device: String,
+    size: i32,
+}
+
+#[derive(Debug)]
+pub struct ScheduleItem {
+    ast: UOp,
+    bufs: Vec<Buffer>,
+}
+
+type ScheduleWithVarRes = (Vec<ScheduleItem>, HashMap<UOp, i32>);
 
 #[derive(Debug)]
 pub struct Tensor {
@@ -48,7 +74,7 @@ impl Tensor {
             uop: UOp {
                 op: Ops::CONST,
                 dtype: dtype.clone(),
-                src: vec![],
+                src: Some(vec![]),
                 arg: Some(data),
             },
         };
@@ -58,13 +84,21 @@ impl Tensor {
         self.uop = self.uop.assign(x.uop);
         return self;
     }
+
+    pub fn realize(&mut self, lst: Vec<Tensor>) {
+        //first call schedule with vars and call run schedule
+    }
+
+    // pub fn schedule_with_vars(&mut self, lst: Vec<Tensor>) -> ScheduleWithVarRes {
+    //     return;
+    // }
 }
 
 #[derive(Clone, Debug)]
 pub struct UOp {
     op: Ops,
     dtype: DType,
-    src: Vec<UOp>,
+    src: Option<Vec<UOp>>,
     arg: Option<ArgType>,
 }
 
@@ -73,8 +107,26 @@ impl UOp {
         return UOp {
             op: Ops::ASSIGN,
             dtype: self.dtype.clone(),
-            src: vec![self.clone(), x],
+            src: Some(vec![self.clone(), x]),
             arg: None,
+        };
+    }
+
+    fn variable(
+        name: String,
+        min_val: i32,
+        max_val: i32,
+        // dtype: DType
+    ) -> UOp {
+        return UOp {
+            op: Ops::DefineVar,
+            dtype: DType::Int32,
+            src: None,
+            arg: Some(ArgType::List(vec![
+                DTypeVal::Str(name),
+                DTypeVal::Int32(min_val),
+                DTypeVal::Int32(max_val),
+            ])),
         };
     }
 }
