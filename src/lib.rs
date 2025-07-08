@@ -6,6 +6,7 @@ pub enum DType {
     Float32,
     Int32,
     Bool,
+    Void,
 }
 
 #[derive(Clone, Debug)]
@@ -29,6 +30,7 @@ enum Ops {
     ADD,
     CONST,
     DefineVar,
+    SINK,
 }
 
 #[derive(Debug)]
@@ -85,8 +87,19 @@ impl Tensor {
         return self;
     }
 
-    pub fn realize(&mut self, lst: Vec<Tensor>) {
+    pub fn add(&mut self, x: Tensor) -> &Tensor {
+        self.uop = self.uop.add(x.uop, self.dtype.clone());
+        return self;
+    }
+
+    pub fn realize(&mut self) {
         //first call schedule with vars and call run schedule
+    }
+
+    pub fn kernelize(&mut self) {
+        //first call schedule with vars and call run schedule
+        //
+        //
     }
 
     // pub fn schedule_with_vars(&mut self, lst: Vec<Tensor>) -> ScheduleWithVarRes {
@@ -127,6 +140,24 @@ impl UOp {
                 DTypeVal::Int32(min_val),
                 DTypeVal::Int32(max_val),
             ])),
+        };
+    }
+
+    fn sink() -> UOp {
+        return UOp {
+            op: Ops::SINK,
+            dtype: DType::Void,
+            // src: ,
+            // arg: None,
+        };
+    }
+
+    fn add(&mut self, y: UOp, dtype: DType) -> UOp {
+        return UOp {
+            op: Ops::ADD,
+            dtype: dtype,
+            src: Some(vec![self.clone(), y]),
+            arg: None,
         };
     }
 }

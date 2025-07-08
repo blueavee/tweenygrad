@@ -7,7 +7,7 @@ fn main() {
     let mut x = Tensor::new(ArgType::Val(DTypeVal::Int32(3)), DType::Int32);
     let y = Tensor::new(ArgType::Val(DTypeVal::Int32(6)), DType::Int32);
 
-    x.assign(y);
+    let c = x.add(y);
 
-    println!("{:?}", x)
+    println!("{:?}", c)
 }
