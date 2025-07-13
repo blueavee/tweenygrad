@@ -1,7 +1,8 @@
 #![allow(unused)]
-use std::collections::HashMap;
+use ordered_float::OrderedFloat;
+use std::collections::{HashMap, HashSet};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DType {
     Float32,
     Int32,
@@ -9,21 +10,21 @@ pub enum DType {
     Void,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum DTypeVal {
-    Float32(f32),
+    Float32(OrderedFloat<f32>),
     Int32(i32),
     Bool(bool),
     Str(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum ArgType {
     Val(DTypeVal),
     List(Vec<DTypeVal>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum Ops {
     ASSIGN,
     STORE,
@@ -73,12 +74,7 @@ impl Tensor {
             data: None,
             dtype: dtype.clone(),
             // shape,
-            uop: UOp {
-                op: Ops::CONST,
-                dtype: dtype.clone(),
-                src: Some(vec![]),
-                arg: Some(data),
-            },
+            uop: UOp::new(Ops::CONST, dtype.clone(), Some(vec![]), Some(data)),
         };
     }
 
@@ -98,31 +94,73 @@ impl Tensor {
 
     pub fn kernelize(&mut self) {
         //first call schedule with vars and call run schedule
-        //
-        //
     }
 
-    // pub fn schedule_with_vars(&mut self, lst: Vec<Tensor>) -> ScheduleWithVarRes {
-    //     return;
-    // }
+    pub fn schedule_with_vars(&mut self)
+    // -> ScheduleWithVarRes
+    {
+        // let sink = UOp.sink([self.clone()]);
+        let sink = UOp::new(Ops::SINK, DType::Void, Some(vec![self.uop.clone()]), None);
+
+        let mut remove_assing_map: HashMap<UOp, UOp> = HashMap::new();
+
+        let toposorted = sink.toposort();
+
+        for i in toposorted {
+            if i.op == Ops::ASSIGN {
+                remove_assing_map.insert(i.clone(), i.buf_uop());
+            }
+        }
+    }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct UOp {
     op: Ops,
     dtype: DType,
     src: Option<Vec<UOp>>,
+    children: Option<Vec<UOp>>,
     arg: Option<ArgType>,
 }
 
 impl UOp {
-    fn assign(&self, x: UOp) -> UOp {
-        return UOp {
-            op: Ops::ASSIGN,
-            dtype: self.dtype.clone(),
-            src: Some(vec![self.clone(), x]),
-            arg: None,
+    fn new(op: Ops, dtype: DType, src: Option<Vec<UOp>>, arg: Option<ArgType>) -> UOp {
+        let created = UOp {
+            op: op.clone(),
+            dtype: dtype.clone(),
+            src: src.clone(),
+            arg: arg.clone(),
+            children: Some(vec![]),
         };
+
+        if src.is_some() && src.as_ref().unwrap().len() > 0 {
+            if let Some(value) = src.clone().as_mut() {
+                for i in value.iter_mut() {
+                    if i.children.is_none() {
+                        i.children = Some(vec![]);
+                    }
+                    i.children.as_mut().unwrap().push(created.clone());
+                }
+            }
+        }
+
+        return created;
+
+        // return UOp::new {
+        //     op: op,
+        //     dtype: dtype,
+        //     src: src,
+        //     arg: arg,
+        // };
+    }
+
+    fn assign(&self, x: UOp) -> UOp {
+        return UOp::new(
+            Ops::ASSIGN,
+            self.dtype.clone(),
+            Some(vec![self.clone(), x]),
+            None,
+        );
     }
 
     fn variable(
@@ -131,34 +169,69 @@ impl UOp {
         max_val: i32,
         // dtype: DType
     ) -> UOp {
-        return UOp {
-            op: Ops::DefineVar,
-            dtype: DType::Int32,
-            src: None,
-            arg: Some(ArgType::List(vec![
+        return UOp::new(
+            Ops::DefineVar,
+            DType::Int32,
+            None,
+            Some(ArgType::List(vec![
                 DTypeVal::Str(name),
                 DTypeVal::Int32(min_val),
                 DTypeVal::Int32(max_val),
             ])),
-        };
+        );
     }
 
-    fn sink() -> UOp {
-        return UOp {
-            op: Ops::SINK,
-            dtype: DType::Void,
-            // src: ,
-            // arg: None,
-        };
+    fn sink(srcs: &[UOp]) -> UOp {
+        return UOp::new(Ops::SINK, DType::Void, Some(srcs.to_vec()), None);
     }
 
     fn add(&mut self, y: UOp, dtype: DType) -> UOp {
-        return UOp {
-            op: Ops::ADD,
-            dtype: dtype,
-            src: Some(vec![self.clone(), y]),
-            arg: None,
-        };
+        return UOp::new(Ops::ADD, dtype, Some(vec![self.clone(), y]), None);
+    }
+
+    fn toposort(&self) -> Vec<UOp> {
+        let mut ret: Vec<UOp> = vec![];
+        let mut visited_set: HashSet<UOp> = HashSet::new();
+        let mut stack: Vec<(UOp, bool)> = vec![(self.clone(), false)];
+
+        while stack.len() > 0 {
+            if let Some((node, visited)) = stack.pop() {
+                if visited_set.contains(&node) {
+                    continue;
+                }
+                if (!visited) {
+                    stack.push((node.clone(), true));
+                    for i in node.src.as_ref().unwrap() {
+                        stack.push((i.clone(), false));
+                    }
+                } else {
+                    visited_set.insert(node.clone());
+                    ret.push(node.clone());
+                }
+            }
+        }
+
+        return ret;
+    }
+
+    fn buf_uop(&self) -> UOp {
+        return self.src.as_ref().unwrap()[0].clone();
+    }
+}
+
+pub fn apply_map_to_tensors(applied_map: HashMap<UOp, UOp>) {
+    let mut all_uops: HashSet<UOp> = HashSet::new();
+    let mut searhc_ops = applied_map.keys().collect::<Vec<&UOp>>();
+
+    while searhc_ops.len() > 0 {
+        let x = searhc_ops.pop().unwrap();
+        if all_uops.contains(x) {
+            continue;
+        }
+        all_uops.insert(x.clone());
+        for i in x.children.as_ref().unwrap() {
+            searhc_ops.push(i);
+        }
     }
 }
 
